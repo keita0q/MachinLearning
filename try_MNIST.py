@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 # TensowFlowのインポート
 import tensorflow as tf
 # MNISTを読み込むためinput_data.pyを同じディレクトリに置きインポートする

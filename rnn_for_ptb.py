@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """Example / benchmark for building a PTB LSTM model.
 
 Trains the model described in:
@@ -64,8 +66,6 @@ class PTBModel(object):
 
   def __init__(self, is_training, config):
     self.batch_size = batch_size = config.batch_size
-
-    # rnn 繰り返し回数
     self.num_steps = num_steps = config.num_steps
     size = config.hidden_size
     vocab_size = config.vocab_size
@@ -178,7 +178,7 @@ class SmallConfig(object):
   num_steps = 20
   hidden_size = 200
   max_epoch = 4
-  max_max_epoch = 6
+  max_max_epoch = 13
   keep_prob = 1.0
   lr_decay = 0.5
   batch_size = 20

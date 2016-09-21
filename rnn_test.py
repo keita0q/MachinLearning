@@ -50,16 +50,24 @@ def inference(input_ph, istate_ph):
         in3 = tf.matmul(in2, weight1_var) + bias1_var
         in4 = tf.split(0, length_of_sequences, in3)
 
+        # make LSTN cells
         cell = rnn_cell.BasicLSTMCell(num_of_hidden_nodes, forget_bias=forget_bias)
+
+        # modeling rnn Layer
+        # rnn_output -> 全状態繊維家庭における出力結果
         rnn_output, states_op = rnn.rnn(cell, in4, initial_state=istate_ph)
+
+        # modelの最終出力
+        # rnn_output[-1] -> 最終状態での出力
         output_op = tf.matmul(rnn_output[-1], weight2_var) + bias2_var
 
         # Add summary ops to collect data
-        w1_hist = tf.histogram_summary("weights1", weight1_var )
-        w2_hist = tf.histogram_summary("weights2", weight2_var )
+        w1_hist = tf.histogram_summary("weights1", weight1_var)
+        w2_hist = tf.histogram_summary("weights2", weight2_var)
         b1_hist = tf.histogram_summary("biases1", bias1_var)
         b2_hist = tf.histogram_summary("biases2", bias2_var)
-        output_hist = tf.histogram_summary("output",  output_op )
+        output_hist = tf.histogram_summary("output",  output_op)
+        # save 用
         results = [weight1_var, weight2_var, bias1_var,  bias2_var]
         return output_op, states_op, results
 
@@ -70,7 +78,7 @@ def loss(output_op, supervisor_ph):
         tf.scalar_summary("loss", loss_op)
         return loss_op
 
-def training(loss_op):
+def training(loss_op, optimizer):
     with tf.name_scope("training") as scope:
         training_op = optimizer.minimize(loss_op)
         return training_op
@@ -95,6 +103,7 @@ def calc_accuracy(output_op, prints=False):
         print("accuracy %f" % (total/float(len(ts))))
         return output
 
+# -------------------------------------------------------------------------------------------------------
 random.seed(0)
 np.random.seed(0)
 tf.set_random_seed(0)
@@ -104,13 +113,18 @@ optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
 X, t = create_data(num_of_sample, length_of_sequences)
 
 with tf.Graph().as_default():
+    # 入力データ流し込み口
     input_ph      = tf.placeholder(tf.float32, [None, length_of_sequences, num_of_input_nodes], name="input")
+    # ラベルデータ流し込み口
     supervisor_ph = tf.placeholder(tf.float32, [None, num_of_output_nodes], name="supervisor")
+    # 初期状態んが仕込み口
     istate_ph     = tf.placeholder(tf.float32, [None, num_of_hidden_nodes * 2], name="istate")
 
+    # 毎回 placeholder に状態は初期値を流し込む。
+    # よって前回の結果は使ってない。
     output_op, states_op, datas_op = inference(input_ph, istate_ph)
     loss_op = loss(output_op, supervisor_ph)
-    training_op = training(loss_op)
+    training_op = training(loss_op, optimizer)
 
     summary_op = tf.merge_all_summaries()
     init = tf.initialize_all_variables()

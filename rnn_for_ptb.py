@@ -87,12 +87,18 @@ class PTBModel(object):
     self._initial_state = cell.zero_state(batch_size, tf.float32)
 
     with tf.device("/cpu:0"):
-    #   より密な行列に単語のＩＤを埋め込む
-      embedding = tf.get_variable("embedding", [vocab_size, size])
-      inputs = tf.nn.embedding_lookup(embedding, self._input_data)
+        # embedding 行列はすでに用意されている
+        # Word Enbedding 用に用いる
+        embedding = tf.get_variable("embedding", [vocab_size, size])
+
+        #  inpits = tensor(batch_size*num_steps*hidden_size)
+        #  単語IDをhidden_sizeの単語ベクトルにするする処理を行う
+        rnn_inputs = tf.nn.embedding_lookup(embedding, self._input_data)
+
+    # enbeddingCell = tf.nn.rnn_cell.EnbeddingWrapper(cell,vocab_size,size)
 
     if is_training and config.keep_prob < 1:
-      inputs = tf.nn.dropout(inputs, config.keep_prob)
+      rnn_inputs = tf.nn.dropout(rnn_inputs, config.keep_prob)
 
     # Simplified version of tensorflow.models.rnn.rnn.py's rnn().
     # This builds an unrolled LSTM for tutorial purposes only.
@@ -101,23 +107,29 @@ class PTBModel(object):
     # The alternative version of the code below is:
     #
     # from tensorflow.models.rnn import rnn
-    # inputs = [tf.squeeze(input_, [1])
-    #           for input_ in tf.split(1, num_steps, inputs)]
-    # outputs, state = rnn.rnn(cell, inputs, initial_state=self._initial_state)
+    # rnn_inputs = [tf.squeeze(input_, [1])
+    #           for input_ in tf.split(1, num_steps, rnn_inputs)]
+    # outputs, state = rnn.rnn(cell, rnn_inputs, initial_state=self._initial_state)
     outputs = []
     state = self._initial_state
     with tf.variable_scope("RNN"):
       for time_step in range(num_steps):
         if time_step > 0: tf.get_variable_scope().reuse_variables()
-        (cell_output, state) = cell(inputs[:, time_step, :], state)
+        (cell_output, state) = cell(rnn_inputs[:, time_step, :], state)
         outputs.append(cell_output)
+    # rnn_output = [[hidden_size],[hidden_size],...,batch_size*num_steps*[hidden_size],[hidden_size]]
+    # の形で順番に並んでる。
+    rnn_output = tf.reshape(tf.concat(1, outputs), [-1, size])
 
-    output = tf.reshape(tf.concat(1, outputs), [-1, size])
     softmax_w = tf.get_variable("softmax_w", [size, vocab_size])
     softmax_b = tf.get_variable("softmax_b", [vocab_size])
-    logits = tf.matmul(output, softmax_w) + softmax_b
 
-    #　ターゲットの対数尤度を求める
+    # [batch_size*num_steps*[vocab_size]]
+    logits = tf.matmul(rnn_output, softmax_w) + softmax_b
+
+    #　シーケンスのlogitsを用いてexampleごとのクロスエントロピーを求める。
+    #　内部的に sparse_softmax_cross_entropy_with_logits を用いて logits と targets でクロスエントロピーの合計値を求める。
+    #　最後に入れる重みは主べて1を入れて全部の項をそのまま足し合わせることを示す。
     loss = tf.nn.seq2seq.sequence_loss_by_example(
         [logits],
         [tf.reshape(self._targets, [-1])],
@@ -178,7 +190,7 @@ class SmallConfig(object):
   num_steps = 20
   hidden_size = 200
   max_epoch = 4
-  max_max_epoch = 13
+  max_max_epoch = 6
   keep_prob = 1.0
   lr_decay = 0.5
   batch_size = 20

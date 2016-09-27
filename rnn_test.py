@@ -57,8 +57,8 @@ def inference(input_ph, istate_ph):
         # rnn_output -> 全状態繊維家庭における出力結果
         rnn_output, states_op = rnn.rnn(cell, in4, initial_state=istate_ph)
 
-        # modelの最終出力
-        # rnn_output[-1] -> 最終状態での出力
+        # modelの出力
+        # rnn_output[-1] -> 全出力結果を1次元のベクトルにならべる。
         output_op = tf.matmul(rnn_output[-1], weight2_var) + bias2_var
 
         # Add summary ops to collect data

@@ -12,10 +12,10 @@ num_of_output_nodes         = 1
 length_of_sequences         = 10
 num_of_training_epochs      = 5000
 size_of_mini_batch          = 100
-num_of_prediction_epochs    = 100
+num_of_prediction_epochs    = 1000
 learning_rate               = 0.01
 forget_bias                 = 0.8
-num_of_sample = 1000
+num_of_sample               = 1000
 
 # batchデータ生成
 def get_batch(batch_size, X, t):
@@ -33,50 +33,54 @@ def create_data(nb_of_samples, sequence_len):
     return X, t
 
 def make_prediction(nb_of_samples):
-    sequence_len = 10
+    sequence_len = length_of_sequences
     xs, ts = create_data(nb_of_samples, sequence_len)
     return np.array([[[y] for y in x] for x in xs]), np.array([[x] for x in ts])
 
 
-def inference(input_ph, istate_ph):
+def inference(input_ph):
      with tf.name_scope("inference") as scope:
-        weight1_var = tf.Variable(tf.truncated_normal([num_of_input_nodes, num_of_hidden_nodes], stddev=0.1), name="weight1")
-        weight2_var = tf.Variable(tf.truncated_normal([num_of_hidden_nodes, num_of_output_nodes], stddev=0.1), name="weight2")
-        bias1_var   = tf.Variable(tf.truncated_normal([num_of_hidden_nodes], stddev=0.1), name="bias1")
-        bias2_var   = tf.Variable(tf.truncated_normal([num_of_output_nodes], stddev=0.1), name="bias2")
+        weight_in = tf.Variable(tf.truncated_normal([num_of_input_nodes, num_of_hidden_nodes], stddev=0.1), name="weight_in")
+        weight_out = tf.Variable(tf.truncated_normal([num_of_hidden_nodes, num_of_output_nodes], stddev=0.1), name="weight_out")
+        bias_in   = tf.Variable(tf.truncated_normal([num_of_hidden_nodes], stddev=0.1), name="bias_in")
+        bias_out   = tf.Variable(tf.truncated_normal([num_of_output_nodes], stddev=0.1), name="bias_out")
 
+        # 10*100*1
         in1 = tf.transpose(input_ph, [1, 0, 2])
-        in2 = tf.reshape(in1, [-1, num_of_input_nodes])
-        in3 = tf.matmul(in2, weight1_var) + bias1_var
-        in4 = tf.split(0, length_of_sequences, in3)
+        u_in = tf.reshape(in1, [-1, num_of_input_nodes])
+        z_in = tf.matmul(u_in, weight_in) + bias_in
+        # length_of_sequences 個に入力を分割する
+        z_in_seq = tf.split(0, length_of_sequences, z_in)
 
+        # make Basic RNN cells
+        # cell = rnn_cell.BasicRNNCell(num_of_hidden_nodes)
         # make LSTN cells
         cell = rnn_cell.BasicLSTMCell(num_of_hidden_nodes, forget_bias=forget_bias)
 
         # modeling rnn Layer
-        # rnn_output -> 全状態繊維家庭における出力結果
-        rnn_output, states_op = rnn.rnn(cell, in4, initial_state=istate_ph)
+        # rnn_outputs -> 全状態繊維家庭における出力結果
+        # states_op -> 最終出力の一つ前の状態(出力)
+        rnn_outputs, states_op = rnn.rnn(cell, z_in_seq, dtype=tf.float32)
 
-        # modelの出力
-        # rnn_output[-1] -> 全出力結果を1次元のベクトルにならべる。
-        output_op = tf.matmul(rnn_output[-1], weight2_var) + bias2_var
+        # modelの最終出力
+        # rnn_outputs[-1] -> 最終状態での出力
+        output_op = tf.matmul(rnn_outputs[-1], weight_out) + bias_out
 
         # Add summary ops to collect data
-        w1_hist = tf.histogram_summary("weights1", weight1_var)
-        w2_hist = tf.histogram_summary("weights2", weight2_var)
-        b1_hist = tf.histogram_summary("biases1", bias1_var)
-        b2_hist = tf.histogram_summary("biases2", bias2_var)
+        w1_hist = tf.histogram_summary("weights_in", weight_in)
+        w2_hist = tf.histogram_summary("weights_out", weight_out)
+        b1_hist = tf.histogram_summary("biases_in", bias_in)
+        b2_hist = tf.histogram_summary("biases_out", bias_out)
         output_hist = tf.histogram_summary("output",  output_op)
         # save 用
-        results = [weight1_var, weight2_var, bias1_var,  bias2_var]
+        results = [weight_in, weight_out, bias_in,  bias_out]
         return output_op, states_op, results
 
 def loss(output_op, supervisor_ph):
     with tf.name_scope("loss") as scope:
-        square_error = tf.reduce_mean(tf.square(output_op - supervisor_ph))
-        loss_op  =  square_error
-        tf.scalar_summary("loss", loss_op)
-        return loss_op
+        error = tf.reduce_mean(tf.square(output_op - supervisor_ph))
+        tf.scalar_summary("loss", error)
+        return error
 
 def training(loss_op, optimizer):
     with tf.name_scope("training") as scope:
@@ -88,7 +92,6 @@ def calc_accuracy(output_op, prints=False):
         pred_dict = {
                 input_ph:  inputs,
                 supervisor_ph: ts,
-                istate_ph:    np.zeros((num_of_prediction_epochs, num_of_hidden_nodes * 2)),
         }
         output= sess.run([output_op], feed_dict=pred_dict)
 
@@ -117,12 +120,9 @@ with tf.Graph().as_default():
     input_ph      = tf.placeholder(tf.float32, [None, length_of_sequences, num_of_input_nodes], name="input")
     # ラベルデータ流し込み口
     supervisor_ph = tf.placeholder(tf.float32, [None, num_of_output_nodes], name="supervisor")
-    # 初期状態んが仕込み口
-    istate_ph     = tf.placeholder(tf.float32, [None, num_of_hidden_nodes * 2], name="istate")
 
     # 毎回 placeholder に状態は初期値を流し込む。
-    # よって前回の結果は使ってない。
-    output_op, states_op, datas_op = inference(input_ph, istate_ph)
+    output_op, states_op, datas_op = inference(input_ph)
     loss_op = loss(output_op, supervisor_ph)
     training_op = training(loss_op, optimizer)
 
@@ -131,22 +131,21 @@ with tf.Graph().as_default():
 
     with tf.Session() as sess:
         saver = tf.train.Saver()
-        summary_writer = tf.train.SummaryWriter("./tmp/tensorflow_log", graph=sess.graph)
+        summary_writer = tf.train.SummaryWriter("./tmp/LSTM_log", graph=sess.graph)
         sess.run(init)
 
         for epoch in range(num_of_training_epochs):
-            inputs, supervisors = get_batch(size_of_mini_batch, X, t)
+            inputs, label = get_batch(size_of_mini_batch, X, t)
             train_dict = {
                 input_ph:      inputs,
-                supervisor_ph: supervisors,
-                istate_ph:     np.zeros((size_of_mini_batch, num_of_hidden_nodes * 2)),
+                supervisor_ph: label,
             }
-            sess.run(training_op, feed_dict=train_dict)
+            _, summary_str = sess.run([training_op,summary_op], feed_dict=train_dict)
+            summary_writer.add_summary(summary_str, epoch)
 
             if (epoch ) % 100 == 0:
-                summary_str, train_loss = sess.run([summary_op, loss_op], feed_dict=train_dict)
+                train_loss = sess.run(loss_op, feed_dict=train_dict)
                 print("train#%d, train loss: %e" % (epoch, train_loss))
-                summary_writer.add_summary(summary_str, epoch)
                 if (epoch ) % 500 == 0:
                     calc_accuracy(output_op)
 

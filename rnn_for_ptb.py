@@ -261,7 +261,7 @@ def run_epoch(session, m, data, eval_op, writer, verbose=False, epoch=None):
     if verbose:
         cost, state, _, summary_str= session.run([m.cost, m.final_state, eval_op, summary_op],
                                      {m.input_data: x, m.targets: y, m.initial_state: state})
-        writer.add_summary(summary_str, dataLength*epoch+step)
+        writer.add_summary(summary_str, epoch_size*epoch+step)
     else:
         cost, state, _= session.run([m.cost, m.final_state, eval_op],
                                      {m.input_data: x, m.targets: y, m.initial_state: state})
